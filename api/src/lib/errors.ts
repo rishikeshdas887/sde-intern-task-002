@@ -1,10 +1,14 @@
-export class AppError extends Error {
-  readonly statusCode: number
+export type AppHttpStatus = 400 | 404 | 409 | 422 | 500
 
-  constructor(message: string, statusCode: number) {
+export class AppError extends Error {
+  readonly status: AppHttpStatus
+  readonly statusCode: AppHttpStatus
+
+  constructor(message: string, status: AppHttpStatus = 500) {
     super(message)
     this.name = 'AppError'
-    this.statusCode = statusCode
+    this.status = status
+    this.statusCode = status
     Object.setPrototypeOf(this, new.target.prototype)
   }
 }
