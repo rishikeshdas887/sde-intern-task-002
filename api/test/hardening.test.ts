@@ -1,6 +1,6 @@
 import { exports } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
-import { type Balance, call, createBill, createHome, type Share } from './helpers'
+import { type Balance, call, createBill, createHome, type Member, type Share } from './helpers'
 
 describe('Hardening & Concurrency Tests', () => {
   describe('Case 1: Home with no members', () => {
@@ -226,6 +226,67 @@ describe('Hardening & Concurrency Tests', () => {
       })
       expect(res.status).toBe(400)
       expect(res.body.error).toBe('Title must be a non-empty string under 200 characters')
+    })
+  })
+
+  describe('Case 8: Advanced domain edge cases & robustness', () => {
+    it('handles totalCents less than member count (0-cent shares saved and payable)', async () => {
+      const { homeId } = await createHome(['M1', 'M2', 'M3', 'M4', 'M5'])
+      const bill = await createBill(homeId, 2)
+
+      expect(bill.status).toBe(201)
+      expect(bill.body.shares).toHaveLength(5)
+      expect(bill.body.shares.map((s) => s.amountCents)).toEqual([1, 1, 0, 0, 0])
+
+      // Paying a 0-cent share works cleanly
+      const zeroShare = bill.body.shares[2]
+      if (!zeroShare) throw new Error('Missing share')
+      const paid = await call<Share>(
+        'POST',
+        `/api/bills/${bill.body.id}/shares/${zeroShare.id}/pay`,
+        {
+          headers: { 'Idempotency-Key': crypto.randomUUID() },
+        },
+      )
+      expect(paid.status).toBe(200)
+      expect(paid.body.paidAt).toEqual(expect.any(String))
+    })
+
+    it('allows duplicate member names in the same home while maintaining sequence ordering', async () => {
+      const home = await call<{ id: string }>('POST', '/api/homes', {
+        body: { name: 'Duplicate Roommates Flat' },
+      })
+      const m1 = await call<Member>('POST', `/api/homes/${home.body.id}/members`, {
+        body: { name: 'Alex' },
+      })
+      const m2 = await call<Member>('POST', `/api/homes/${home.body.id}/members`, {
+        body: { name: 'Alex' },
+      })
+
+      expect(m1.status).toBe(201)
+      expect(m2.status).toBe(201)
+      expect(m1.body.id).not.toBe(m2.body.id)
+
+      const balancesRes = await call<{ balances: Balance[] }>(
+        'GET',
+        `/api/homes/${home.body.id}/balances`,
+      )
+      expect(balancesRes.status).toBe(200)
+      expect(balancesRes.body.balances.map((b) => b.memberId)).toEqual([m1.body.id, m2.body.id])
+    })
+
+    it('supports Unicode and international character strings', async () => {
+      const home = await call<{ id: string; name: string }>('POST', '/api/homes', {
+        body: { name: '🏡 Casa de Montaña 🏔️ (東京都)' },
+      })
+      expect(home.status).toBe(201)
+      expect(home.body.name).toBe('🏡 Casa de Montaña 🏔️ (東京都)')
+
+      const member = await call<Member>('POST', `/api/homes/${home.body.id}/members`, {
+        body: { name: '田中 太郎 (René)' },
+      })
+      expect(member.status).toBe(201)
+      expect(member.body.name).toBe('田中 太郎 (René)')
     })
   })
 })

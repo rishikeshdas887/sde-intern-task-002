@@ -45,9 +45,9 @@ CREATE TABLE IF NOT EXISTS shares (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   CONSTRAINT fk_shares_bill FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
   CONSTRAINT fk_shares_member FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
-  CONSTRAINT ck_shares_amount_cents_positive CHECK (amount_cents > 0),
-  CONSTRAINT uq_shares_bill_member UNIQUE (bill_id, member_id),
-  CONSTRAINT uq_shares_bill_idempotency UNIQUE (bill_id, idempotency_key)
+  CONSTRAINT ck_shares_amount_cents_non_negative CHECK (amount_cents >= 0),
+  CONSTRAINT ck_shares_paid_idempotency CHECK ((paid_at IS NULL AND idempotency_key IS NULL) OR (paid_at IS NOT NULL AND idempotency_key IS NOT NULL)),
+  CONSTRAINT uq_shares_bill_member UNIQUE (bill_id, member_id)
 );
 
 -- Indexes on foreign keys for high-performance join operations

@@ -26,7 +26,8 @@ This plan establishes the end-to-end development phases for the "Shared Bill Spl
     3. `CONSTRAINT uq_shares_bill_member UNIQUE (bill_id, member_id)`
     4. `CONSTRAINT uq_members_home_position UNIQUE (home_id, position)`
     5. `CONSTRAINT ck_homes_name_non_empty CHECK (length(trim(name)) > 0)`
-    6. `CONSTRAINT ck_shares_amount_cents_positive CHECK (amount_cents > 0)`
+    6. `CONSTRAINT ck_shares_amount_cents_non_negative CHECK (amount_cents >= 0)`
+    7. `CONSTRAINT ck_shares_paid_idempotency CHECK ((paid_at IS NULL AND idempotency_key IS NULL) OR (paid_at IS NOT NULL AND idempotency_key IS NOT NULL))`
   - Indexes on `members(home_id)`, `bills(home_id)`, `shares(bill_id)`, `shares(member_id)`.
 - **Definition of Done**:
   - Migrations apply cleanly via `applyD1Migrations` and `wrangler d1 migrations apply`.

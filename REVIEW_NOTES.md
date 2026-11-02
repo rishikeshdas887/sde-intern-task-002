@@ -26,7 +26,7 @@ Date: November 2026
 
 ### 1.2 Database & Concurrency Review
 
-- **Named Constraints**: 10 explicit named constraints in `api/migrations/0001_init.sql` protecting foreign key cascades, non-empty text, unique sequence positions, positive totals, and unique idempotency keys per bill.
+- **Named Constraints**: 11 explicit named constraints in `api/migrations/0001_init.sql` protecting foreign key cascades, non-empty text, unique sequence positions, positive totals, non-negative share amounts, unique member shares per bill, and payment state consistency.
 - **Race Safety**: Atomic conditional `UPDATE ... WHERE id = ? AND bill_id = ? AND paid_at IS NULL` guarantees linearizable execution under concurrent requests.
 - **Batching**: Bill and share creations use `db.batch()` to ensure transactional all-or-nothing execution.
 - **Aggregations**: Balance aggregation uses a single `LEFT JOIN` and `GROUP BY` query, avoiding N+1 roundtrips.

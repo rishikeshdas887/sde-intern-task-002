@@ -13,7 +13,7 @@ This document serves as an exhaustive reference guide to the entire codebase. It
 #### 1. `api/migrations/0001_init.sql`
 
 - **What it does**: Declares the relational schema for Cloudflare D1 (SQLite), creating four core tables: `homes`, `members`, `bills`, and `shares`.
-- **Why it exists**: Provides an immutable, version-controlled foundation for data persistence. It specifies 10 named constraints (foreign keys with cascade deletion, unique constraints, and check constraints) that prevent corrupted financial or relational state at the storage layer.
+- **Why it exists**: Provides an immutable, version-controlled foundation for data persistence. It specifies 11 named constraints (foreign keys with cascade deletion, unique constraints, and check constraints) that prevent corrupted financial or relational state at the storage layer.
 - **How it fits**: Automatically applied by Wrangler during local development (`pnpm dev`) and before test suite execution in Vitest.
 
 #### 2. `api/src/domain/splitter.ts`
@@ -184,14 +184,14 @@ and enforcing a unique constraint `uq_members_home_position UNIQUE (home_id, pos
 
 ---
 
-### 4. What happens when an idempotency key is reused across two different shares?
+### 4. How does your schema guarantee payment state consistency at the database level?
 
 **Answer:**
 "In our schema, we defined:
 ```sql
-CONSTRAINT uq_shares_bill_idempotency UNIQUE (bill_id, idempotency_key)
+CONSTRAINT ck_shares_paid_idempotency CHECK ((paid_at IS NULL AND idempotency_key IS NULL) OR (paid_at IS NOT NULL AND idempotency_key IS NOT NULL))
 ```
-This ensures an idempotency key cannot be accidentally or maliciously reused to mark multiple different shares as paid on the same bill. If a client attempts to pass the same idempotency key for a different share on that bill, the database rejects the write, and our handler surfaces the appropriate conflict."
+This check constraint enforces at the storage engine level that an unpaid share cannot have an orphaned `idempotency_key`, and conversely that a paid share cannot have a NULL `idempotency_key`. The payment transition is atomic via conditional `UPDATE shares SET paid_at = ?, idempotency_key = ? WHERE id = ? AND bill_id = ? AND paid_at IS NULL`, ensuring idempotency is scoped strictly to the payment of that specific share and preventing illegal intermediate states."
 
 ---
 

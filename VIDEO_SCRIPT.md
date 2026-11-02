@@ -14,7 +14,7 @@
 > 
 > The architecture is built around three core pillars:
 > 1. An ultra-low latency REST API running on **Cloudflare Workers** using **Hono** (`api/src/index.ts:25`).
-> 2. An ACID-compliant relational data store using **Cloudflare D1** (`api/migrations/0001_init.sql:1`) enforcing 10 named schema constraints.
+> 2. An ACID-compliant relational data store using **Cloudflare D1** (`api/migrations/0001_init.sql:1`) enforcing 11 named schema constraints.
 > 3. A responsive, resilient single-page web app built with **React 19**, **Vite**, **TanStack Router**, and **TanStack Query** (`web/src/routes/$homeId.tsx:45`).
 > 
 > The system enforces integer cents across the entire pipeline—no floating-point numbers exist in database columns, API JSON payloads, or domain calculations."
@@ -68,7 +68,7 @@
 > INSERT INTO members (id, home_id, name, position)
 > VALUES (?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM members WHERE home_id = ?))
 > ```
-> Coupled with the named unique constraint `uq_members_home_position` in `api/migrations/0001_init.sql:16`, this guarantees deterministic, gapless ordering per household."
+> Coupled with the named unique constraint `uq_members_home_position` in `api/migrations/0001_init.sql:21`, this guarantees deterministic, gapless ordering per household."
 
 ---
 
