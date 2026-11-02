@@ -1,132 +1,136 @@
-# Implementation Plan: Shared Bill Splitter
+# Phased Execution Plan: Shared Bill Splitter
 
-This phased plan outlines the end-to-end delivery of the Shared Bill Splitter system for Cloudflare Workers (Hono + D1) and web client (React + Vite + TanStack Router + TanStack Query + Tailwind CSS).
-
----
-
-## Phase 1: Planning, Schema & Architecture Specification
-- **Requirements Matrix**: Map all 7 core edge cases and API specifications to strict invariants.
-- **Database Schema**: Design `api/migrations/0001_init.sql` with SQLite D1 tables: `homes`, `members`, `bills`, `shares`.
-- **Named Constraints**:
-  1. `chk_bills_total_cents`: `CHECK (total_cents > 0)` prevents zero and negative bill amounts at the database engine level.
-  2. `chk_shares_amount_cents`: `CHECK (amount_cents > 0)` prevents invalid share allocations.
-  3. `chk_shares_payment_state`: `CHECK ((paid_at IS NULL AND idempotency_key IS NULL) OR (paid_at IS NOT NULL AND idempotency_key IS NOT NULL))` enforces strict atomic transition between unpaid and paid states.
-  4. `uq_members_home_position`: `UNIQUE (home_id, position)` guarantees deterministic join order per home.
-  5. Foreign keys:
-     - `fk_members_home`: `FOREIGN KEY (home_id) REFERENCES homes(id) ON DELETE CASCADE`
-     - `fk_bills_home`: `FOREIGN KEY (home_id) REFERENCES homes(id) ON DELETE CASCADE`
-     - `fk_shares_bill`: `FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE`
-     - `fk_shares_member`: `FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE RESTRICT`
-- **Definition of Done**: `PLAN.md` committed; `0001_init.sql` created; migrations apply cleanly in local test runner.
+This plan establishes the end-to-end development phases for the "Shared Bill Splitter" assignment, meeting every requirement and hard constraint.
 
 ---
 
-## Phase 2: Core Domain Logic & Pure Functions
-- **Split Algorithm (`api/src/domain/splitter.ts`)**:
-  - Pure function `splitBill(totalCents: number, memberIds: string[]): Array<{ memberId: string, amountCents: number }>`
-  - Computes `base = Math.floor(totalCents / n)` and `remainder = totalCents % n`.
-  - Assigns `base + 1` to the first `remainder` members according to their monotonic sequence, and `base` to the rest.
-  - Verifies invariant: `sum(shares) === totalCents`.
-- **Validation & Errors (`api/src/lib/errors.ts`, `api/src/lib/validator.ts`)**:
-  - Custom typed error classes: `NotFoundError`, `ValidationError` (400 or 422), `ConflictError` (409), `UnauthorizedError`.
-  - Centralized Hono error handler formatting all errors as `{ "error": message }`.
-  - Global `app.notFound()` handler returning 404 JSON.
-- **Definition of Done**: Unit tests for `splitBill` pass with 100% branch coverage; validation helpers reject bad input cleanly.
+## Phase 1: Requirements & System Architecture
+
+- **Objective**: Formalize functional requirements, data models, invariant boundaries, and system architecture.
+- **Deliverables**:
+  - `PLAN.md` (this file).
+  - Architecture breakdown including concurrency model, idempotency guarantees, and Remainder Distribution Algorithm.
+- **Definition of Done**:
+  - Full specifications mapped to test vectors; edge cases defined; error handling strategy locked down.
 
 ---
 
-## Phase 3: Backend API Vertical Slices
-- **Slice 3.1: Homes & Members**:
-  - `POST /api/homes`: Validates name, generates ID (UUID), stores in DB.
-  - `POST /api/homes/:homeId/members`: Validates home existence (404), calculates next monotonic sequence position, inserts member.
-  - `GET /api/homes`: List homes (convenience for UI).
-  - `GET /api/homes/:homeId`: Fetch home details.
-- **Slice 3.2: Bills & Shares Creation**:
-  - `POST /api/homes/:homeId/bills`:
-    - Validates home exists (404).
-    - Validates `totalCents` is a positive safe integer (`Number.isSafeInteger(n) && n > 0`); rejects 0, negatives, decimals, strings, nulls with 422.
-    - Validates members count > 0; if 0 members, returns 422.
-    - Executes pure split.
-    - Persists bill and all shares in a single atomic `db.batch([insertBillStmt, ...insertShareStmts])`.
-  - `GET /api/homes/:homeId/bills`: Lists all bills and nested shares for a home.
-- **Slice 3.3: Idempotent Payment & Concurrency**:
-  - `POST /api/bills/:billId/shares/:shareId/pay`:
-    - Checks `Idempotency-Key` header (400 if missing or whitespace).
-    - Executes single atomic conditional update:
-      `UPDATE shares SET paid_at = ?, idempotency_key = ? WHERE id = ? AND bill_id = ? AND paid_at IS NULL`
-    - Evaluates `meta.changes`:
-      - If 1: Payment succeeded; return 200 with updated share.
-      - If 0: Row was already paid, does not exist, or does not belong to bill.
-        - Query share by `id` and `bill_id`.
-        - If not found: return 404.
-        - If `idempotency_key === headerKey`: Replay match; return 200 with existing share data.
-        - If `idempotency_key !== headerKey`: Conflict; return 409.
-- **Slice 3.4: Balances Aggregation**:
-  - `GET /api/homes/:homeId/balances`:
-    - Checks home exists (404).
-    - Executes single aggregated query joining members with unpaid shares for that home, ordered by member `position ASC`.
-    - Returns `{ balances: [{ memberId, name, outstandingCents }] }`.
-- **Definition of Done**: All visible tests (`homes.test.ts`, `bills.test.ts`, `payments.test.ts`) pass.
+## Phase 2: Database Schema & Migrations
+
+- **Objective**: Design SQLite D1 schema with strict referential integrity, indexes, and at least 3 named constraints.
+- **Deliverables**:
+  - `api/migrations/0001_init.sql`
+  - Named constraints:
+    1. `CONSTRAINT fk_members_home FOREIGN KEY (home_id) REFERENCES homes(id) ON DELETE CASCADE`
+    2. `CONSTRAINT ck_bills_total_cents_positive CHECK (total_cents > 0)`
+    3. `CONSTRAINT uq_shares_bill_member UNIQUE (bill_id, member_id)`
+    4. `CONSTRAINT uq_members_home_position UNIQUE (home_id, position)`
+    5. `CONSTRAINT ck_homes_name_non_empty CHECK (length(trim(name)) > 0)`
+    6. `CONSTRAINT ck_shares_amount_cents_positive CHECK (amount_cents > 0)`
+  - Indexes on `members(home_id)`, `bills(home_id)`, `shares(bill_id)`, `shares(member_id)`.
+- **Definition of Done**:
+  - Migrations apply cleanly via `applyD1Migrations` and `wrangler d1 migrations apply`.
 
 ---
 
-## Phase 4: UI Design with Stitch MCP
-- **Stitch MCP Design Generation**:
-  - Generate 2 distinct screen design variants in Stitch:
-    - Variant A: High-density fintech dashboard inspired by Linear & Stripe Dashboard.
-    - Variant B: Modern card-based dashboard with micro-interactions and prominent balance display inspired by Mercury / Splitwise.
-  - Evaluate variants against user requirements and select the superior design.
-  - Document evaluation and justification in `DESIGN.md`.
-- **Definition of Done**: 2 Stitch variants generated, design system extracted, `DESIGN.md` committed.
+## Phase 3: Core Domain Services & Split Logic
+
+- **Objective**: Implement pure domain functions and data access layers.
+- **Deliverables**:
+  - Pure split algorithm: `splitBill(totalCents: number, memberCount: number): number[]`
+    - Base = `Math.floor(totalCents / n)`
+    - Remainder = `totalCents % n`
+    - First `remainder` members get `base + 1`. Total shares sum exactly to `totalCents`.
+  - Comprehensive unit tests for `splitBill`.
+- **Definition of Done**:
+  - 100% test coverage for split mathematics (positive, zero remainder, large numbers, 1 member, etc.).
 
 ---
 
-## Phase 5: Frontend Implementation (React + Vite + TanStack Router)
-- **Design System & Tailwind**:
-  - Set up CSS variables for dark/light themes, sleek typography (tabular numbers for money), 4/8px spacing system, responsive layout (360px to 4K).
-- **State Management & Data Layer**:
-  - TanStack Query client with configured retry, cache, and timeout settings.
-  - Fully typed API client (`web/src/lib/api.ts`) using native `fetch` + `AbortController` (10s timeout) and strict error handling.
-  - Format money using `Intl.NumberFormat` from integer cents.
-- **UI Components & Features**:
-  - Home selector & creator modal/bar.
-  - Member management and quick-add form.
-  - Member balance overview with deterministic avatar initials and clean status badges.
-  - Bill creation dialog with real-time validation and split preview.
-  - Bill list with progress bar (paid vs total amount) and collapsible share items.
-  - Pay action with:
-    - Per-attempt idempotency key generation & preservation across retries.
-    - Loading skeletons for fetching and disabled states during mutation.
-    - Inline error alerts with retry button on payment failure.
-    - Immediate UI update only upon 200 confirmation (no optimistic desync).
-  - Robust Error Boundary at root and route levels to prevent white-screens.
-  - Theme toggle (light/dark mode) with persistence.
-- **Definition of Done**: Web app builds with zero errors; full browser verification passes (happy path, error states, slow network, races).
+## Phase 4: API Implementation (Hono on Cloudflare Workers)
+
+- **Objective**: Build robust, typed Hono API with central error handling and atomic transactions.
+- **Deliverables**:
+  - Central error handling middleware (`app.onError`, `app.notFound`, malformed JSON parser). Every error is `{ "error": "message" }`.
+  - Input validation using Zod.
+  - Endpoints:
+    - `POST /api/homes`: Create home with validated name.
+    - `POST /api/homes/:homeId/members`: Add member with monotonic position sequence.
+    - `POST /api/homes/:homeId/bills`: Create bill + shares atomically via `db.batch()`.
+    - `POST /api/bills/:billId/shares/:shareId/pay`: Single atomic conditional UPDATE with `Idempotency-Key` header; replay vs conflict detection.
+    - `GET /api/homes/:homeId/balances`: Single SQL aggregate query with no N+1, ordered by member position.
+    - `GET /api/homes/:homeId`: Fetch home details and members for UI.
+    - `GET /api/homes/:homeId/bills`: Fetch bills with shares for UI.
+    - `GET /api/homes`: List homes for UI switcher.
+- **Definition of Done**:
+  - All visible tests in `api/test/` (`homes.test.ts`, `bills.test.ts`, `payments.test.ts`) pass 100% green.
 
 ---
 
-## Phase 6: Hardening & Comprehensive Testing
-- **New Test Suites**:
-  - `api/test/edge-cases.test.ts`: Test Case 1 (0 members), Case 2 (bad amounts: 0, negative, float, string, NaN, MAX_SAFE_INTEGER+1), Case 3 (uneven splits with diverse member counts), Case 4 (idempotent replay), Case 5 (concurrent racing payments using `Promise.all`), Case 6 (404s for mismatched bill/share IDs, nonexistent entities), Case 7 (error format compliance).
-  - `api/test/security-input.test.ts`: Malformed JSON bodies, missing content-type, unicode names (emojis, RTL, accents), SQL injection strings, duplicate member names.
-- **Definition of Done**: All original visible tests and new hardening tests pass; 100% green.
+## Phase 5: UI Design & Prototyping with Stitch MCP
+
+- **Objective**: Create a high-fidelity, fintech-grade design via Stitch MCP.
+- **Deliverables**:
+  - Generate 2 Stitch design variants with modern fintech aesthetics (Splitwise clarity + Stripe precision + Mercury/Cash App numerics).
+  - Document comparison and select the winning variant in `DESIGN.md`.
+  - Establish design tokens (colors, typography, spacing, elevations) in CSS variables.
+- **Definition of Done**:
+  - Stitch generation complete; screenshots and tokens exported; `DESIGN.md` finalized.
 
 ---
 
-## Phase 7: Code Review & Quality Gates
-- **CodeRabbit Review**:
-  - Audit every file against strict guidelines: no `any`, no `@ts-ignore`, correct error codes, atomic D1 batching, Biome cleanliness.
-  - Record audit results and rationale in `REVIEW_NOTES.md`.
-- **Biome & Typecheck Verification**:
-  - `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm build` must pass cleanly.
-- **Definition of Done**: Zero lint/type errors, all checks passing.
+## Phase 6: Frontend Implementation (React + TanStack Router & Query)
+
+- **Objective**: Build responsive, accessible web application matching the Stitch design.
+- **Deliverables**:
+  - TanStack Router configuration with route parameters (`/:homeId`).
+  - TanStack Query integration with query caching, refetching, and mutations.
+  - Skeletons for loading states; rich empty states; retryable error states.
+  - Pay button state machine: disabled during mutation, one idempotency key per attempt reused on retry.
+  - Request timeout and `AbortController`.
+  - Responsive design (360px up), dark & light mode, WCAG AA contrast, reduced motion support.
+- **Definition of Done**:
+  - `pnpm dev` runs seamlessly; UI renders bills, shares, balances; payments trigger updates; keyboard and screen-reader accessible.
 
 ---
 
-## Phase 8: Handoff Documentation
-- Update `README.md` with Decisions section (3 architectural decisions).
-- Write `ARCHITECTURE.md` with Mermaid diagram, database constraint analysis, and payment lifecycle/race sequence diagram.
-- Write `VIDEO_SCRIPT.md` (3-minute walk-through script with exact file/line references).
-- Write `WALKTHROUGH.md` (code tour and 15 live-call questions & answers).
-- Write `AI_USAGE.md` detailing all AI tools and workflows used.
-- **Definition of Done**: All documentation committed and verified.
+## Phase 7: Hardening & Edge-Case Testing
+
+- **Objective**: Write comprehensive, independent tests verifying all 7 mandatory test cases and adversarial inputs.
+- **Deliverables**:
+  - `api/test/hardening.test.ts`:
+    1. Home with no members.
+    2. Zero, negative, decimal, string, NaN, safe-integer overflow amounts.
+    3. Uneven split exactness.
+    4. Idempotency replay with same key.
+    5. Concurrent race condition on share payment (simulated parallel requests).
+    6. Non-existent bill/share/home, malformed IDs, cross-home/cross-bill share mismatches.
+    7. Slow/500 API responses and web error resilience.
+    8. Boundary names: Unicode, empty/whitespace, long strings, duplicate member names.
+- **Definition of Done**:
+  - All hardening tests pass; zero regressions; no `any`; zero linter warnings.
+
+---
+
+## Phase 8: Quality Gate & Code Review
+
+- **Objective**: Verify strict compliance across the entire monorepo.
+- **Deliverables**:
+  - `REVIEW_NOTES.md` capturing automated and principal architectural reviews.
+  - `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm build` all green.
+- **Definition of Done**:
+  - 100% clean check from root.
+
+---
+
+## Phase 9: Handoff Documentation
+
+- **Objective**: Provide comprehensive, crystal-clear documentation for review and presentation.
+- **Deliverables**:
+  - Updated `README.md` with Decisions section (3 key decisions + rationale).
+  - `ARCHITECTURE.md` (Mermaid diagrams, constraint breakdown, payment lifecycle).
+  - `VIDEO_SCRIPT.md` (3-minute script covering architecture, data flow, trade-off, 7 cases).
+  - `WALKTHROUGH.md` (plain-English file tour, function explanations, 15 live-call Q&As).
+  - `AI_USAGE.md` (tools used and exact workflows).
+- **Definition of Done**:
+  - All documentation files present and formatted cleanly.
