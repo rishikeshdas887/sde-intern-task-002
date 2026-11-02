@@ -171,8 +171,15 @@ app.post('/api/homes/:homeId/bills', async (c) => {
     throw new BadRequestError('Title must be a non-empty string under 200 characters')
   }
 
-  if (typeof totalCents !== 'number' || !Number.isSafeInteger(totalCents) || totalCents <= 0) {
-    throw new UnprocessableEntityError('totalCents must be a positive safe integer')
+  if (
+    typeof totalCents !== 'number' ||
+    !Number.isSafeInteger(totalCents) ||
+    totalCents <= 0 ||
+    totalCents > 1_000_000_000
+  ) {
+    throw new UnprocessableEntityError(
+      'totalCents must be a positive safe integer under 1,000,000,000',
+    )
   }
 
   const { results: members } = await c.env.DB.prepare(
