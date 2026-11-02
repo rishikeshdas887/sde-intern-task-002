@@ -155,3 +155,20 @@ You must understand every line you submit. We check this with your video and in 
 5. Paste the repository link and the video link in the application form.
 
 We will run `pnpm install && pnpm check && pnpm typecheck && pnpm test` on your repository.
+
+## Decisions
+
+### 1. Atomic Conditional UPDATE for Payment Idempotency and Race Safety
+
+**Choice:** Enforce payment mutation through a single atomic SQL statement (`UPDATE shares SET paid_at = ?, idempotency_key = ? WHERE id = ? AND bill_id = ? AND paid_at IS NULL`) combined with inspection of `meta.changes`.
+**Why:** Distributed databases and edge environments (like Cloudflare D1 over SQLite) can encounter interleaved parallel requests. A multi-step `SELECT` followed by `UPDATE` creates a classic check-then-act race condition where two requests could both observe `paid_at IS NULL` and execute duplicate payments. By collapsing the verification and state transition into a single conditional `UPDATE`, SQLite's row-level lock ensures exactly one execution gets `changes === 1`. If `changes === 0`, the endpoint queries the persisted record: if `idempotency_key` matches the request, it returns an idempotent `200 OK` replay with the original timestamp; if the key differs, it rejects the duplicate payment with `409 Conflict`. This guarantees zero double-payments, linearizable state transitions, and zero distributed locking overhead.
+
+### 2. Monotonic Member Sequencing for Deterministic Remainder Cents Distribution
+
+**Choice:** Store an integer `position` on each home member assigned via `(SELECT COALESCE(MAX(position), 0) + 1 FROM members WHERE home_id = ?)` upon insert, and distribute remainder cents sequentially starting at index 0.
+**Why:** The assignment mandates that any remainder cents (`totalCents % memberCount`) must be allocated to members one by one in the order they joined the household. Relying on auto-incrementing primary keys or UUID creation timestamps is dangerous under high clock drift or distributed environments. Explicitly tracking a per-home monotonic `position` column backed by a unique constraint `uq_members_home_position` guarantees a strictly deterministic ordering for both remainder allocation during bill creation and balance aggregation in `GET /api/homes/:homeId/balances`. The pure splitter function `splitBill(totalCents, memberIds)` calculates `base = Math.floor(totalCents / n)` and distributes `+1` cent to the first `remainder` members, satisfying the conservation invariant $\sum \text{shares} = \text{totalCents}$ under all conditions.
+
+### 3. Strict Integer Cents Domain Modeling and Uniform JSON Error Contracts
+
+**Choice:** Model all monetary quantities strictly as integer cents (`totalCents`, `amountCents`, `outstandingCents`) and enforce a centralized `AppError` hierarchy returning `{ "error": "message" }`.
+**Why:** IEEE 754 floating-point arithmetic introduces precision inaccuracies (e.g., `0.1 + 0.2 === 0.30000000000000004`), which can cause catastrophic truncation errors when splitting financial balances. Using integer cents eliminates rounding errors across database storage, API serialization, and UI presentation. Pairing this domain rule with typed error classes (`BadRequestError`, `NotFoundError`, `ConflictError`, `UnprocessableEntityError`) and a global Hono `onError` handler ensures that every error response strictly conforms to the `{ "error": "message" }` contract across all edge cases without leaking stack traces or internal database schema details.
