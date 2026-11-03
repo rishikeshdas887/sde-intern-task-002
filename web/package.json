@@ -4,13 +4,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build:api": "esbuild src/api/index.ts --bundle --platform=node --target=node24 --external:node:sqlite --format=esm --outfile=api/index.js",
+    "build": "vite build && pnpm run build:api",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.6",
     "@tanstack/react-query": "^5.105.1",
     "@tanstack/react-router": "^1.170.46",
+    "hono": "^4.13.16",
     "lucide-react": "^1.66.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
@@ -21,6 +24,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
