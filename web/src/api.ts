@@ -54,6 +54,8 @@ export class ApiClientError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 10000
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || ''
 
 async function request<T>(
   path: string,
@@ -72,8 +74,13 @@ async function request<T>(
     options.signal.addEventListener('abort', () => controller.abort())
   }
 
+  const url =
+    path.startsWith('http://') || path.startsWith('https://')
+      ? path
+      : `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
+
   try {
-    const response = await fetch(path, {
+    const response = await fetch(url, {
       method: options.method ?? 'GET',
       headers: {
         'content-type': 'application/json',
