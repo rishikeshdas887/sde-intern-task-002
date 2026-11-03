@@ -1,14 +1,16 @@
-import { DatabaseSync } from 'node:sqlite'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import fs from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
+import { waitUntil } from '@vercel/functions'
+
+type SupportedValueType = null | number | bigint | string | Uint8Array
 
 const BLOB_PUBLIC_URL =
   'https://pmyhjwq2tlkcwmum.public.blob.vercel-storage.com/split_zero_ledger.db'
 
 const dbPath = path.join(os.tmpdir(), 'split_zero_ledger.db')
 let dbInstance: DatabaseSync | null = null
-let lastSyncEtag: string | null = null
 
 const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -65,31 +67,30 @@ CREATE INDEX IF NOT EXISTS idx_shares_member_id ON shares(member_id);
 CREATE INDEX IF NOT EXISTS idx_shares_paid_at ON shares(paid_at);
 `
 
-async function syncFromBlobIfAvailable(force = false): Promise<boolean> {
+let isSyncing = false
+let syncPending = false
+
+async function syncFromBlobIfAvailable(): Promise<boolean> {
+  if (fs.existsSync(dbPath)) {
+    return true
+  }
   try {
-    const res = await fetch(`${BLOB_PUBLIC_URL}?t=${Date.now()}`, { cache: 'no-store' })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 2000)
+    const res = await fetch(`${BLOB_PUBLIC_URL}?t=${Date.now()}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
     if (!res.ok) return false
-    const etag = res.headers.get('etag')
-    if (!force && etag && etag === lastSyncEtag && fs.existsSync(dbPath)) {
-      return false
-    }
     const buf = Buffer.from(await res.arrayBuffer())
     const SQLITE_HEADER = 'SQLite format 3'
     if (buf.length >= 16 && buf.subarray(0, 15).toString() === SQLITE_HEADER) {
-      if (dbInstance) {
-        try {
-          dbInstance.close()
-        } catch {
-          // ignore close errors
-        }
-        dbInstance = null
-      }
       fs.writeFileSync(dbPath, buf)
-      lastSyncEtag = etag
       return true
     }
-  } catch (err) {
-    console.warn('Sync from blob skipped:', err)
+  } catch {
+    // Timeout or network error; gracefully proceed with fresh schema
   }
   return false
 }
@@ -98,6 +99,8 @@ async function uploadToBlob(data: Buffer): Promise<boolean> {
   const token = process.env.BLOB_READ_WRITE_TOKEN
   if (!token) return false
   try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 4000)
     const url = 'https://vercel.com/api/blob/?pathname=split_zero_ledger.db'
     const res = await fetch(url, {
       method: 'PUT',
@@ -109,35 +112,54 @@ async function uploadToBlob(data: Buffer): Promise<boolean> {
         'x-allow-overwrite': '1',
         'content-type': 'application/octet-stream',
       },
-      body: data,
+      body: new Uint8Array(data),
+      signal: controller.signal,
     })
+    clearTimeout(timer)
     return res.ok
-  } catch (err) {
-    console.warn('Upload to blob failed:', err)
+  } catch {
     return false
   }
 }
 
 async function syncToBlob(): Promise<void> {
-  if (!dbInstance) return
+  if (isSyncing) {
+    syncPending = true
+    return
+  }
+  isSyncing = true
   try {
-    dbInstance.exec('PRAGMA wal_checkpoint(TRUNCATE);')
-    if (fs.existsSync(dbPath) && process.env.BLOB_READ_WRITE_TOKEN) {
-      const data = fs.readFileSync(dbPath)
-      await uploadToBlob(data)
-    }
-  } catch (err) {
-    console.warn('Sync to blob error:', err)
+    do {
+      syncPending = false
+      if (!dbInstance) break
+      dbInstance.exec('PRAGMA wal_checkpoint(TRUNCATE);')
+      if (fs.existsSync(dbPath) && process.env.BLOB_READ_WRITE_TOKEN) {
+        const data = fs.readFileSync(dbPath)
+        await uploadToBlob(data)
+      }
+    } while (syncPending)
+  } catch {
+    // Ignore background sync errors
+  } finally {
+    isSyncing = false
   }
 }
 
-async function getDatabase(forceRefresh = false): Promise<DatabaseSync> {
-  if (forceRefresh || !dbInstance || !fs.existsSync(dbPath)) {
-    await syncFromBlobIfAvailable(forceRefresh)
-    if (!dbInstance) {
-      dbInstance = new DatabaseSync(dbPath)
-      dbInstance.exec(SCHEMA)
+function triggerBackgroundSync(): void {
+  try {
+    waitUntil(syncToBlob())
+  } catch {
+    void syncToBlob()
+  }
+}
+
+async function getDatabase(): Promise<DatabaseSync> {
+  if (!dbInstance) {
+    if (!fs.existsSync(dbPath)) {
+      await syncFromBlobIfAvailable()
     }
+    dbInstance = new DatabaseSync(dbPath)
+    dbInstance.exec(SCHEMA)
   }
   return dbInstance
 }
@@ -158,62 +180,40 @@ export interface D1Database {
 export function createD1Adapter(): D1Database {
   return {
     prepare(sql: string): D1PreparedStatement {
-      let boundParams: unknown[] = []
+      let boundParams: SupportedValueType[] = []
 
       const stmt: D1PreparedStatement = {
         bind(...params: unknown[]) {
-          boundParams = params
+          boundParams = params as SupportedValueType[]
           return stmt
         },
 
         async first<T = Record<string, unknown>>(): Promise<T | null> {
-          let db = await getDatabase()
-          let s = db.prepare(sql)
-          let row = s.get(...(boundParams as any[]))
-
-          // If not found, attempt a fresh sync from blob in case another container created it
-          if (row === undefined || row === null) {
-            const updated = await syncFromBlobIfAvailable(true)
-            if (updated) {
-              db = await getDatabase()
-              s = db.prepare(sql)
-              row = s.get(...(boundParams as any[]))
-            }
-          }
-
+          const db = await getDatabase()
+          const s = db.prepare(sql)
+          const row = s.get(...boundParams)
           return (row as T) ?? null
         },
 
         async all<T = Record<string, unknown>>(): Promise<{ results: T[] }> {
-          let db = await getDatabase()
-          let s = db.prepare(sql)
-          let results = s.all(...(boundParams as any[])) as T[]
-
-          // If empty list, check if remote blob has newer data
-          if (results.length === 0) {
-            const updated = await syncFromBlobIfAvailable(true)
-            if (updated) {
-              db = await getDatabase()
-              s = db.prepare(sql)
-              results = s.all(...(boundParams as any[])) as T[]
-            }
-          }
-
+          const db = await getDatabase()
+          const s = db.prepare(sql)
+          const results = s.all(...boundParams) as T[]
           return { results }
         },
 
         async run(): Promise<{ meta: { changes: number } }> {
           const db = await getDatabase()
           const s = db.prepare(sql)
-          const res = s.run(...(boundParams as any[]))
-          // Automatically sync changes to persistent Blob storage
-          await syncToBlob()
+          const res = s.run(...boundParams)
+          // Background sync to Blob using Vercel waitUntil
+          triggerBackgroundSync()
           return { meta: { changes: Number(res.changes) } }
         },
 
         _execInTx(db: DatabaseSync) {
           const s = db.prepare(sql)
-          const res = s.run(...(boundParams as any[]))
+          const res = s.run(...boundParams)
           return { changes: Number(res.changes) }
         },
       }
@@ -230,8 +230,8 @@ export function createD1Adapter(): D1Database {
           results.push(s._execInTx(db))
         }
         db.exec('COMMIT')
-        // Automatically sync batch changes to persistent Blob storage
-        await syncToBlob()
+        // Background sync to Blob using Vercel waitUntil
+        triggerBackgroundSync()
         return results
       } catch (err) {
         db.exec('ROLLBACK')

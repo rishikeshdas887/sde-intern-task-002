@@ -1,5 +1,5 @@
-import { Hono } from 'hono'
 import { getRequestListener } from '@hono/node-server'
+import { Hono } from 'hono'
 import { createD1Adapter, type D1Database, type D1PreparedStatement } from './db'
 
 export type AppHttpStatus = 400 | 404 | 409 | 422 | 500
@@ -83,7 +83,8 @@ app.get('/api/health', (c) => c.json({ status: 'ok' }))
 // List all homes (UI helper)
 app.get('/api/homes', async (c) => {
   const db = c.get('db')
-  const { results } = await db.prepare(`
+  const { results } = await db
+    .prepare(`
     SELECT 
       h.id, 
       h.name, 
@@ -93,12 +94,13 @@ app.get('/api/homes', async (c) => {
     LEFT JOIN members m ON m.home_id = h.id
     GROUP BY h.id, h.name, h.created_at
     ORDER BY h.created_at DESC
-  `).all<{
-    id: string
-    name: string
-    createdAt: string
-    memberCount: number
-  }>()
+  `)
+    .all<{
+      id: string
+      name: string
+      createdAt: string
+      memberCount: number
+    }>()
 
   return c.json({ homes: results })
 })
@@ -294,9 +296,7 @@ app.post('/api/homes/:homeId/bills', async (c) => {
     })
     insertShareStmts.push(
       db
-        .prepare(
-          'INSERT INTO shares (id, bill_id, member_id, amount_cents) VALUES (?, ?, ?, ?)',
-        )
+        .prepare('INSERT INTO shares (id, bill_id, member_id, amount_cents) VALUES (?, ?, ?, ?)')
         .bind(shareId, billId, s.memberId, s.amountCents),
     )
   }
