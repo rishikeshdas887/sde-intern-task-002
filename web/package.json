@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:api": "esbuild src/api/index.ts --bundle --platform=node --target=node24 --external:node:sqlite --format=esm --outfile=api/index.js",
+    "build:api": "esbuild src/api/index.ts --bundle --minify --platform=node --target=node24 --external:node:sqlite --format=esm --outfile=api/index.js",
     "build": "vite build && pnpm run build:api",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
@@ -13,6 +13,7 @@
     "@hono/node-server": "^2.1.6",
     "@tanstack/react-query": "^5.105.1",
     "@tanstack/react-router": "^1.170.46",
+    "@vercel/blob": "^2.8.2",
     "hono": "^4.13.16",
     "lucide-react": "^1.66.0",
     "react": "^19.3.1",
