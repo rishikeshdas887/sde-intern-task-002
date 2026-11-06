@@ -78,3 +78,39 @@ Date: November 2026
 3. **Multi-Currency Support**:
    - _Current Implementation_: Hardcoded to USD cents ($) using `Intl.NumberFormat('en-US')`.
    - _Future Improvement_: Store currency ISO code (`USD`, `EUR`, `GBP`) on `homes` and format dynamically based on household preference.
+
+---
+
+## 5. Comprehensive Line-by-Line Code Review & DevOps Audit
+
+### 5.1 Architecture & Domain Invariants
+
+- **Database (`api/migrations/0001_init.sql`)**:
+  - Verified 11 named constraints ensuring relational integrity, non-negative shares, monotonic member sequence, and positive bill amounts.
+  - Indexes on foreign keys prevent table scans during join operations.
+- **Pure Split Algorithm (`api/src/domain/splitter.ts`)**:
+  - Verified exact cent conservation: $\sum \text{shares} = \text{totalCents}$.
+  - Sequential remainder cent allocation adheres strictly to monotonic member join order.
+- **Payment Idempotency & Race Protection (`api/src/index.ts`)**:
+  - Verified atomic conditional `UPDATE shares SET paid_at = ?, idempotency_key = ? WHERE id = ? AND bill_id = ? AND paid_at IS NULL`.
+  - Zero double-charge race windows under high concurrency.
+- **Frontend Resiliency (`web/src/routes/$homeId.tsx` & components)**:
+  - Skeletons handle loading states without layout shifts.
+  - AbortController with 10s timeout prevents hung requests.
+  - Error boundaries wrap application roots to eliminate white screens.
+  - Payment buttons reuse idempotency keys across retries to prevent duplicate charges.
+
+### 5.2 Serverless ESM Packaging Bug Resolution
+
+- **Finding**: During Vercel serverless deployment, dynamic import of Node built-ins triggered `Error: Dynamic require of "node:fs/promises" is not supported`.
+- **Resolution**: Updated `web/package.json` esbuild configuration to `--packages=external` for the Node 24 runtime. This preserves native ES module imports and eliminates CommonJS dynamic require polyfill traps.
+
+### 5.3 Cloud & DevOps CI/CD Deployment
+
+- **Live Cloud Deployment**:
+  - **Production URL**: `https://web-eight-inky-78.vercel.app`
+  - **Health Endpoint**: `https://web-eight-inky-78.vercel.app/api/health` (`200 OK`)
+  - **API Contract**: Fully tested end-to-end (`/api/homes`, `/api/homes/:homeId/members`, `/api/homes/:homeId/bills`, `/api/bills/:billId/shares/:shareId/pay`, `/api/homes/:homeId/balances`).
+- **DevOps Workflows**:
+  - `.github/workflows/ci.yml`: Automated quality gate on every push and pull request (Biome, TypeScript, Vitest, Vite build).
+  - `.github/workflows/deploy-cloudflare.yml`: Automated Cloudflare Workers deployment action.
