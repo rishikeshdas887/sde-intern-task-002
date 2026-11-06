@@ -1,6 +1,7 @@
 # SDE Intern Assignment: Shared Bill Splitter
 
 > 🚀 **Live Production Deployment:** [https://web-eight-inky-78.vercel.app](https://web-eight-inky-78.vercel.app)  
+> 🎥 **Code Walkthrough Video (1080p MP4):** [https://web-eight-inky-78.vercel.app/walkthrough_video.mp4](https://web-eight-inky-78.vercel.app/walkthrough_video.mp4)  
 > 🔗 **Alternative Mirror:** [https://web-rishidas887s-projects.vercel.app](https://web-rishidas887s-projects.vercel.app)  
 > 🏥 **API Health Check:** [https://web-eight-inky-78.vercel.app/api/health](https://web-eight-inky-78.vercel.app/api/health)
 
