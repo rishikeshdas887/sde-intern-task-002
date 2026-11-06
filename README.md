@@ -1,5 +1,9 @@
 # SDE Intern Assignment: Shared Bill Splitter
 
+> 🚀 **Live Production Deployment:** [https://web-eight-inky-78.vercel.app](https://web-eight-inky-78.vercel.app)  
+> 🔗 **Alternative Mirror:** [https://web-rishidas887s-projects.vercel.app](https://web-rishidas887s-projects.vercel.app)  
+> 🏥 **API Health Check:** [https://web-eight-inky-78.vercel.app/api/health](https://web-eight-inky-78.vercel.app/api/health)
+
 Welcome. In this assignment you build a small bill splitter for a shared home. It has two parts:
 
 1. **Homes and members:** create a home and add members to it.
