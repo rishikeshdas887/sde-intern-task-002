@@ -15,6 +15,7 @@
     "@tanstack/react-router": "^1.170.46",
     "@vercel/blob": "^2.8.2",
     "@vercel/functions": "^3.10.5",
+    "framer-motion": "^14.9.1",
     "hono": "^4.13.16",
     "lucide-react": "^1.66.0",
     "react": "^19.3.1",

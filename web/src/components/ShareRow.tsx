@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion'
 import { AlertCircle, Check, Loader2, RotateCw } from 'lucide-react'
 import { useRef, useState } from 'react'
 import type { ShareItem } from '../api'
@@ -54,7 +55,11 @@ export function ShareRow({ share, billId, onPay, memberName }: Props) {
     : null
 
   return (
-    <div className="py-2.5 px-3 rounded-lg bg-slate-900/40 hover:bg-slate-900/70 border border-slate-800/40 transition flex flex-col gap-2">
+    <motion.div
+      whileHover={{ scale: 1.008, x: 2 }}
+      transition={{ duration: 0.15 }}
+      className="py-2.5 px-3.5 rounded-xl bg-slate-50 hover:bg-slate-100/90 border border-slate-200/80 hover:border-slate-300 dark:bg-slate-900/50 dark:hover:bg-slate-900/80 dark:border-slate-800/50 dark:hover:border-slate-700/60 transition shadow-sm flex flex-col gap-2"
+    >
       <div className="flex items-center justify-between gap-3 flex-wrap">
         {/* Left: Avatar & Member Name */}
         <div className="flex items-center gap-2.5 min-w-[140px]">
@@ -65,66 +70,81 @@ export function ShareRow({ share, billId, onPay, memberName }: Props) {
             {initials}
           </div>
           <div>
-            <span className="text-sm font-medium text-slate-200">{memberName}</span>
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+              {memberName}
+            </span>
             {isPaid && formattedPaidTime && (
-              <span className="block text-[11px] text-slate-500">Paid {formattedPaidTime}</span>
+              <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                Paid {formattedPaidTime}
+              </span>
             )}
           </div>
         </div>
 
         {/* Right: Amount & Status / Pay Button */}
         <div className="flex items-center gap-3">
-          <span className="tabular-nums font-mono font-medium text-sm text-slate-100">
+          <span className="tabular-nums font-mono font-semibold text-sm text-slate-900 dark:text-slate-100">
             {formatCents(share.amountCents)}
           </span>
 
           {isPaid ? (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+            <motion.span
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 shadow-sm"
+            >
               <Check className="h-3.5 w-3.5" aria-hidden="true" />
               Paid
-            </span>
+            </motion.span>
           ) : (
-            <button
+            <motion.button
               type="button"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={handlePay}
               disabled={isPending}
               aria-busy={isPending}
               aria-label={`Pay ${formatCents(share.amountCents)} share for ${memberName}`}
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 cursor-pointer ${
                 error
-                  ? 'bg-amber-600 hover:bg-amber-500 text-white focus:ring-amber-500'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white focus:ring-indigo-500'
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white focus:ring-amber-500 shadow-amber-600/20'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white focus:ring-indigo-500 shadow-indigo-600/20'
               } disabled:opacity-60 disabled:cursor-not-allowed`}
             >
               {isPending ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                  Paying...
+                  <span>Paying...</span>
                 </>
               ) : error ? (
                 <>
-                  <RotateCw className="h-3 w-3" aria-hidden="true" />
-                  Retry Pay
+                  <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Retry Pay</span>
                 </>
               ) : (
-                'Pay Share'
+                <span>Mark Paid</span>
               )}
-            </button>
+            </motion.button>
           )}
         </div>
       </div>
 
-      {/* Inline Payment Error Alert */}
-      {error && !isPaid && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="flex items-center gap-1.5 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/25 px-2.5 py-1.5 rounded-md mt-1"
-        >
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span>Payment failed: {error}. Click "Retry Pay" to attempt again.</span>
-        </div>
-      )}
-    </div>
+      {/* Inline Payment Error Notice */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            role="alert"
+            className="flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2.5 py-1.5 rounded-lg border border-rose-200 dark:border-rose-500/20"
+          >
+            <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+            <span>{error}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   )
 }

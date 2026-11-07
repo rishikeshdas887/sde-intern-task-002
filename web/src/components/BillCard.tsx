@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion'
 import { CheckCircle2, Clock } from 'lucide-react'
 import type { BillWithShares, MemberItem } from '../api'
 import { formatCents } from '../lib/format'
@@ -30,37 +31,50 @@ export function BillCard({ bill, members, onPayShare }: Props) {
     : null
 
   return (
-    <article
-      className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm transition hover:border-slate-700/80"
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      whileHover={{ y: -3, borderColor: 'rgb(99 102 241 / 0.5)' }}
+      transition={{ duration: 0.25 }}
+      className="rounded-2xl border border-slate-200/90 bg-white/90 hover:bg-white hover:border-slate-300 dark:border-slate-800/90 dark:bg-slate-900/60 dark:hover:bg-slate-900/80 backdrop-blur-md p-5 sm:p-6 shadow-sm hover:shadow-md dark:shadow-md dark:hover:shadow-lg transition-colors ring-1 ring-slate-900/5 dark:ring-white/5"
       aria-labelledby={`bill-title-${bill.id}`}
     >
       {/* Bill Card Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 id={`bill-title-${bill.id}`} className="text-base font-semibold text-slate-100">
+            <h3
+              id={`bill-title-${bill.id}`}
+              className="text-base font-bold text-slate-900 dark:text-slate-100"
+            >
               {bill.title}
             </h3>
             {isFullySettled ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30">
                 <CheckCircle2 className="h-3 w-3" />
                 Fully Settled
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
                 <Clock className="h-3 w-3" />
                 {totalShares - paidCount} Unpaid
               </span>
             )}
           </div>
-          {formattedDate && <p className="mt-1 text-xs text-slate-400">Created {formattedDate}</p>}
+          {formattedDate && (
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Created {formattedDate}
+            </p>
+          )}
         </div>
 
         <div className="text-right">
-          <span className="tabular-nums font-mono font-bold text-lg text-slate-100">
+          <span className="tabular-nums font-mono font-extrabold text-lg sm:text-xl text-slate-900 dark:text-slate-100 block">
             {formatCents(bill.totalCents)}
           </span>
-          <span className="block text-[11px] text-slate-400">
+          <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
             {paidCount} of {totalShares} paid ({percentPaid}%)
           </span>
         </div>
@@ -68,12 +82,16 @@ export function BillCard({ bill, members, onPayShare }: Props) {
 
       {/* Progress Bar */}
       <div className="mt-4">
-        <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-          <div
-            className={`h-full transition-all duration-300 ${
-              isFullySettled ? 'bg-emerald-500' : 'bg-indigo-500'
+        <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800/80 overflow-hidden ring-1 ring-slate-900/5 dark:ring-white/5">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${percentPaid}%` }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+            className={`h-full ${
+              isFullySettled
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                : 'bg-gradient-to-r from-indigo-500 to-violet-500'
             }`}
-            style={{ width: `${percentPaid}%` }}
             role="progressbar"
             aria-valuenow={percentPaid}
             aria-valuemin={0}
@@ -84,9 +102,9 @@ export function BillCard({ bill, members, onPayShare }: Props) {
       </div>
 
       {/* Itemized Shares List */}
-      <div className="mt-4 space-y-2">
-        <h4 className="text-xs font-semibold tracking-wider uppercase text-slate-400 px-1">
-          Member Shares
+      <div className="mt-5 space-y-2">
+        <h4 className="text-[11px] font-bold tracking-wider uppercase text-slate-500 dark:text-slate-400 px-1">
+          Roommate Shares (Remainder Distributed to Early Joiners)
         </h4>
         <div className="space-y-1.5">
           {bill.shares.map((share) => {
@@ -103,6 +121,6 @@ export function BillCard({ bill, members, onPayShare }: Props) {
           })}
         </div>
       </div>
-    </article>
+    </motion.article>
   )
 }
