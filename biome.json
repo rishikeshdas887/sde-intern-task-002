@@ -8,13 +8,13 @@
   "files": {
     "ignoreUnknown": true,
     "includes": [
-      "api/**",
-      "web/**",
+      "api/src/**",
+      "api/test/**",
+      "api/vitest.config.ts",
+      "web/src/**",
+      "web/vite.config.ts",
       "!web/src/routeTree.gen.ts",
-      "!web/api",
-      "!web/src/index.css",
-      "!**/node_modules",
-      "!**/dist"
+      "!web/src/index.css"
     ]
   },
   "css": {
