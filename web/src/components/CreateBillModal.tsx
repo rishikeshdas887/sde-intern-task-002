@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { DollarSign, Receipt, Sparkles, X } from 'lucide-react'
+import { DollarSign, Receipt, RefreshCw, Sparkles, X } from 'lucide-react'
 import type React from 'react'
 import { useMemo, useState } from 'react'
 import type { MemberItem } from '../api'
@@ -248,7 +248,14 @@ export function CreateBillModal({ isOpen, onClose, onSubmit, isSubmitting, membe
                   disabled={isSubmitting || members.length === 0}
                   className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-600/30 transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? 'Creating...' : 'Split & Save Bill'}
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    'Split & Save Bill'
+                  )}
                 </motion.button>
               </div>
             </form>

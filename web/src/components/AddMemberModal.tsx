@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { UserPlus, X } from 'lucide-react'
+import { RefreshCw, UserPlus, X } from 'lucide-react'
 import type React from 'react'
 import { useState } from 'react'
 
@@ -143,7 +143,14 @@ export function AddMemberModal({ isOpen, onClose, onSubmit, isSubmitting, homeNa
                   disabled={isSubmitting}
                   className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? 'Adding...' : 'Add Roommate'}
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                      <span>Adding...</span>
+                    </>
+                  ) : (
+                    'Add Roommate'
+                  )}
                 </motion.button>
               </div>
             </form>

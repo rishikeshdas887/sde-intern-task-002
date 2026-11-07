@@ -53,9 +53,13 @@ export class ApiClientError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 20000
+const DEFAULT_TIMEOUT_MS = 12000
 const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || ''
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 async function request<T>(
   path: string,
@@ -64,67 +68,111 @@ async function request<T>(
     body?: unknown
     headers?: Record<string, string>
     signal?: AbortSignal
+    timeoutMs?: number
+    retries?: number
   } = {},
 ): Promise<T> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+  const maxRetries = options.retries ?? (options.method === 'POST' ? 1 : 2)
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
-  // Link caller signal if provided
-  if (options.signal) {
-    options.signal.addEventListener('abort', () => controller.abort())
-  }
+  let lastError: unknown
 
-  const url =
-    path.startsWith('http://') || path.startsWith('https://')
-      ? path
-      : `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
-  try {
-    const response = await fetch(url, {
-      method: options.method ?? 'GET',
-      headers: {
-        'content-type': 'application/json',
-        ...options.headers,
-      },
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    })
+    const onAbort = () => controller.abort()
+    if (options.signal) {
+      options.signal.addEventListener('abort', onAbort)
+    }
 
-    const text = await response.text()
-    let data: unknown
+    const url =
+      path.startsWith('http://') || path.startsWith('https://')
+        ? path
+        : `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
+
     try {
-      data = text.length > 0 ? JSON.parse(text) : null
-    } catch {
-      throw new ApiClientError(
-        `Server returned invalid non-JSON response (${response.status})`,
-        response.status,
-      )
-    }
+      const response = await fetch(url, {
+        method: options.method ?? 'GET',
+        headers: {
+          'content-type': 'application/json',
+          ...options.headers,
+        },
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      })
 
-    if (!response.ok) {
-      const errorMessage =
-        typeof data === 'object' &&
-        data !== null &&
-        'error' in data &&
-        typeof (data as { error: unknown }).error === 'string'
-          ? (data as { error: string }).error
-          : `Request failed with status ${response.status}`
-      throw new ApiClientError(errorMessage, response.status)
-    }
+      const text = await response.text()
+      let data: unknown
+      try {
+        data = text.length > 0 ? JSON.parse(text) : null
+      } catch {
+        throw new ApiClientError(
+          `Server returned invalid response (${response.status})`,
+          response.status,
+        )
+      }
 
-    return data as T
-  } catch (err: unknown) {
-    if (err instanceof ApiClientError) {
-      throw err
+      if (!response.ok) {
+        const errorMessage =
+          typeof data === 'object' &&
+          data !== null &&
+          'error' in data &&
+          typeof (data as { error: unknown }).error === 'string'
+            ? (data as { error: string }).error
+            : `Request failed with status ${response.status}`
+        throw new ApiClientError(errorMessage, response.status)
+      }
+
+      return data as T
+    } catch (err: unknown) {
+      lastError = err
+
+      // If caller intentionally aborted, don't retry
+      if (options.signal?.aborted) {
+        throw new ApiClientError('Request was cancelled', 499)
+      }
+
+      const isTimeout =
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        (err instanceof ApiClientError && (err.status === 408 || err.status === 504))
+
+      const isServerUnavailable =
+        err instanceof ApiClientError && (err.status === 502 || err.status === 503)
+
+      // Retry on network timeout or cold start server unavailable
+      if (
+        attempt < maxRetries &&
+        (isTimeout || isServerUnavailable || !(err instanceof ApiClientError))
+      ) {
+        await wait(500 * (attempt + 1))
+        continue
+      }
+
+      if (err instanceof ApiClientError) {
+        throw err
+      }
+
+      if (isTimeout) {
+        throw new ApiClientError(
+          'Server took too long to respond. Please check your connection and retry.',
+          408,
+        )
+      }
+
+      const message = err instanceof Error ? err.message : 'Network request failed'
+      throw new ApiClientError(message, 0)
+    } finally {
+      clearTimeout(timeoutId)
+      if (options.signal) {
+        options.signal.removeEventListener('abort', onAbort)
+      }
     }
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new ApiClientError('Request timed out or was cancelled', 408)
-    }
-    const message = err instanceof Error ? err.message : 'Network request failed'
-    throw new ApiClientError(message, 0)
-  } finally {
-    clearTimeout(timeoutId)
   }
+
+  throw lastError instanceof ApiClientError
+    ? lastError
+    : new ApiClientError('Request failed after retries', 0)
 }
 
 export const api = {

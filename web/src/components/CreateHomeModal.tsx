@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Home as HomeIcon, X } from 'lucide-react'
+import { Home as HomeIcon, RefreshCw, X } from 'lucide-react'
 import type React from 'react'
 import { useState } from 'react'
 
@@ -140,7 +140,14 @@ export function CreateHomeModal({ isOpen, onClose, onSubmit, isSubmitting }: Pro
                   disabled={isSubmitting}
                   className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-600/30 transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? 'Creating...' : 'Create Household'}
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    'Create Household'
+                  )}
                 </motion.button>
               </div>
             </form>

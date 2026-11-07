@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { put } from "@vercel/blob";
 import { waitUntil } from "@vercel/functions";
 var BLOB_PUBLIC_URL = "https://pmyhjwq2tlkcwmum.public.blob.vercel-storage.com/split_zero_ledger.db";
 var dbPath = path.join(os.tmpdir(), "split_zero_ledger.db");
@@ -14,6 +15,7 @@ var dbInstance = null;
 var SCHEMA = `
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
+PRAGMA busy_timeout = 5000;
 
 CREATE TABLE IF NOT EXISTS homes (
   id TEXT PRIMARY KEY,
@@ -96,23 +98,17 @@ async function uploadToBlob(data) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4e3);
-    const url = "https://vercel.com/api/blob/?pathname=split_zero_ledger.db";
-    const res = await fetch(url, {
-      method: "PUT",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "x-api-version": "13",
-        "x-vercel-blob-access": "public",
-        "x-add-random-suffix": "0",
-        "x-allow-overwrite": "1",
-        "content-type": "application/octet-stream"
-      },
-      body: new Uint8Array(data),
-      signal: controller.signal
+    await put("split_zero_ledger.db", data, {
+      access: "public",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      token,
+      abortSignal: controller.signal
     });
     clearTimeout(timer);
-    return res.ok;
-  } catch {
+    return true;
+  } catch (err) {
+    console.warn("Failed to upload to blob storage:", err);
     return false;
   }
 }
@@ -126,7 +122,10 @@ async function syncToBlob() {
     do {
       syncPending = false;
       if (!dbInstance) break;
-      dbInstance.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+      try {
+        dbInstance.exec("PRAGMA wal_checkpoint(PASSIVE);");
+      } catch {
+      }
       if (fs.existsSync(dbPath) && process.env.BLOB_READ_WRITE_TOKEN) {
         const data = fs.readFileSync(dbPath);
         await uploadToBlob(data);

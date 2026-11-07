@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowRight, Home as HomeIcon, Sparkles, Wallet } from 'lucide-react'
+import { ArrowRight, Home as HomeIcon, RefreshCw, Sparkles, Wallet } from 'lucide-react'
 import type React from 'react'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
@@ -16,6 +16,7 @@ function IndexPage() {
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [isSlowResponse, setIsSlowResponse] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['homes'],
@@ -30,6 +31,19 @@ function IndexPage() {
     },
   })
 
+  // Show helpful hint if serverless container is cold starting (>3.5s)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    if (createHomeMutation.isPending) {
+      timer = setTimeout(() => setIsSlowResponse(true), 3500)
+    } else {
+      setIsSlowResponse(false)
+    }
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [createHomeMutation.isPending])
+
   // If homes already exist, automatically redirect to the primary home
   useEffect(() => {
     if (data?.homes && data.homes.length > 0) {
@@ -40,8 +54,8 @@ function IndexPage() {
     }
   }, [data, navigate])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) {
       setError('Home name cannot be empty')
@@ -119,9 +133,16 @@ function IndexPage() {
                 animate={{ opacity: 1, height: 'auto', y: 0 }}
                 exit={{ opacity: 0, height: 0, y: -10 }}
                 role="alert"
-                className="rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-400 font-medium"
+                className="rounded-xl border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-400 font-medium flex items-center justify-between gap-2"
               >
-                {error}
+                <span className="flex-1">{error}</span>
+                <button
+                  type="button"
+                  onClick={() => handleSubmit()}
+                  className="font-bold underline hover:no-underline cursor-pointer shrink-0"
+                >
+                  Retry
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
@@ -144,7 +165,10 @@ function IndexPage() {
                 maxLength={100}
                 placeholder="e.g. Baker Street Flat, Sunnyvale 204"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (error) setError(null)
+                }}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 bg-slate-50/80 text-slate-900 placeholder-slate-400 dark:border-slate-700/80 dark:bg-slate-950/70 dark:text-slate-100 dark:placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30 transition shadow-inner"
               />
             </div>
@@ -152,17 +176,24 @@ function IndexPage() {
 
           <motion.button
             type="submit"
-            whileHover={{
-              scale: 1.02,
-              y: -1,
-              boxShadow: '0 12px 24px -6px rgba(99, 102, 241, 0.4)',
-            }}
-            whileTap={{ scale: 0.98 }}
+            whileHover={
+              !createHomeMutation.isPending
+                ? {
+                    scale: 1.02,
+                    y: -1,
+                    boxShadow: '0 12px 24px -6px rgba(99, 102, 241, 0.4)',
+                  }
+                : {}
+            }
+            whileTap={!createHomeMutation.isPending ? { scale: 0.98 } : {}}
             disabled={createHomeMutation.isPending}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 transition disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 transition disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
           >
             {createHomeMutation.isPending ? (
-              <span className="inline-flex items-center gap-2">Creating Household...</span>
+              <span className="inline-flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                <span>{isSlowResponse ? 'Waking up server...' : 'Creating Household...'}</span>
+              </span>
             ) : (
               <>
                 <span>Get Started</span>
@@ -170,6 +201,15 @@ function IndexPage() {
               </>
             )}
           </motion.button>
+          {isSlowResponse && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center text-[11px] text-slate-500 dark:text-slate-400"
+            >
+              First request may take a few seconds on cold starts. Thank you for your patience!
+            </motion.p>
+          )}
         </form>
       </motion.div>
     </div>
